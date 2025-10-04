@@ -16,7 +16,9 @@ VTXControl::VTXControl(
     int vtxMode,
     int softPin,
     const uint16_t powers[],
+    int powers_size,
     const uint16_t freqs[],
+    int freqs_size,
     int responseTimeOut = 1000,
     bool smartBaudRate = true,
     int numtries = 3)
