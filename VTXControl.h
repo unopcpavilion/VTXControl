@@ -56,8 +56,8 @@ public:
   VTXControl(
     int vtxMode, 
     int softPin, 
-    const uint16_t* powers,
-    const uint16_t* freqs,
+    const uint16_t powers[],
+    const uint16_t freqs[],
     int responseTimeOut = 1000, 
     bool smartBaudRate = true, 
     int numtries = 3);
@@ -97,8 +97,8 @@ private:
   int _numtries = 3;//num tries to send request and receive response, after that we try to change baud rate and try again
   bool _smartBaudRate = true;//tries to find apporpriated baud rate to communicate with VTX, if false- just work on fixed initial baudrate
   
-  const uint16_t* _powers = nullptr;//table of powers in mW
-  const uint16_t* _freqs = nullptr;//table of frequencies in MHz
+  const uint16_t _powers[];//table of powers in mW
+  const uint16_t _freqs[];//table of frequencies in MHz
 
   //some utility functions  
   int getChannelIndex(uint16_t freq);

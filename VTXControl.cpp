@@ -16,8 +16,8 @@ const uint16_t powers_v21[4] = { 14/*25mw*/, 20/*200mw*/, 26/*500mw*/, 30/*800mw
 VTXControl::VTXControl(
   int vtxMode, 
   int softPin, 
-  const uint16_t* powers,
-  const uint16_t* freqs,
+  const uint16_t powers[],
+  const uint16_t freqs[],
   int responseTimeOut = 1000, 
   bool smartBaudRate = true, 
   int numtries=3)
