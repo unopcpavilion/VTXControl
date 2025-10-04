@@ -53,7 +53,14 @@ class VTXControl
 {
    
 public:  
-  VTXControl(int vtxMode, int softPin, int responseTimeOut = 1000, bool smartBaudRate = true, int numtries = 3);
+  VTXControl(
+    int vtxMode, 
+    int softPin, 
+    const uint16_t* powers,
+    const uint16_t* freqs,
+    int responseTimeOut = 1000, 
+    bool smartBaudRate = true, 
+    int numtries = 3);
   void flush();
   void waitForInMs(unsigned int ms);
   //bool setPitMode(bool enabled);
@@ -90,6 +97,9 @@ private:
   int _numtries = 3;//num tries to send request and receive response, after that we try to change baud rate and try again
   bool _smartBaudRate = true;//tries to find apporpriated baud rate to communicate with VTX, if false- just work on fixed initial baudrate
   
+  const uint16_t* _powers = nullptr;//table of powers in mW
+  const uint16_t* _freqs = nullptr;//table of frequencies in MHz
+
   //some utility functions  
   int getChannelIndex(uint16_t freq);
   uint16_t getChannelFrequency(int chIndex);

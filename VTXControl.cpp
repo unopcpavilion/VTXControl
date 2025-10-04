@@ -5,23 +5,22 @@
 #include "VTX_Tramp.h"
 #include "SoftwareSerialWithHalfDuplex.h"
 
-//these parameters for EACHINE TX5258
-const uint16_t powers[4] = { 25, 200, 500, 800 };//in mW
 //these parameters for JHEMCU RuiBet Tran3016W
 //uint16_t powers[5] = { 25, 200, 400, 800, 1600 };//in mW
 const uint16_t powers_v1[4] = { 7/*25mw*/, 16/*200mw*/, 25/*500mw*/, 40/*800mw*/ };//for SmartAudio protocol v1
 //Smartaudio v2.1 protocol seems to be not documented (TBS documented just v1 and v2), but defined in ArduPilot
 const uint16_t powers_v21[4] = { 14/*25mw*/, 20/*200mw*/, 26/*500mw*/, 30/*800mw*/ };//for SmartAudio protocol v2.1 in dbm
-const uint16_t freqs[40] = {
-  5865, 5845, 5825, 5805, 5785, 5765, 5745, 5725,//A band
-  5733, 5752, 5771, 5790, 5809, 5828, 5847, 5866,//B band
-  5705, 5685, 5665, 5645, 5885, 5905, 5925, 5945,//E band
-  5740, 5760, 5780, 5800, 5820, 5840, 5860, 5880,//F band
-  5658, 5695, 5732, 5769, 5806, 5843, 5880, 5917,//r Band
-};
+
 
 // Instantiates the VTX object with the specified parameters
-VTXControl::VTXControl(int vtxMode, int softPin, int responseTimeOut = 1000, bool smartBaudRate = true, int numtries=3)
+VTXControl::VTXControl(
+  int vtxMode, 
+  int softPin, 
+  const uint16_t* powers,
+  const uint16_t freqs,
+  int responseTimeOut = 1000, 
+  bool smartBaudRate = true, 
+  int numtries=3)
 {    
   DEBUG("VTXControl: Create");
   vtx_mode = vtxMode;
@@ -29,6 +28,8 @@ VTXControl::VTXControl(int vtxMode, int softPin, int responseTimeOut = 1000, boo
   _responseTimeOut = responseTimeOut;
   _numtries = numtries;
   _smartBaudRate = smartBaudRate;
+  _powers = powers;
+  _freqs = freqs;
   
   //with SmartAudio protocol according to TBS documentation
   //!!! Please do remember, for SmartAudio - logic level = 3.3V !!!
@@ -190,7 +191,7 @@ bool VTXControl::sa_setPower(int pwrLevel)
   DEBUG("sa_setPower, push to write:" + (String)sizeof(buf));
   //according to SA documentation:
   //The SmartAudio line need to be low before a frame is sent. 
-  //If the host MCU can’t handle this it can be done by
+  //If the host MCU canпїЅt handle this it can be done by
   //sending a 0x00 dummy byte in front of the actual frame.  
   port->writeDummyByte();
   bool res = port->write((uint8_t*)&buf, sizeof(buf)) == sizeof(buf);
@@ -209,7 +210,7 @@ bool VTXControl::sa_setChannel(uint8_t channel)
   DEBUG("sa_setChannel, push to write:" + (String)sizeof(buf));
   //according to SA documentation:
   //The SmartAudio line need to be low before a frame is sent. 
-  //If the host MCU can’t handle this it can be done by
+  //If the host MCU canпїЅt handle this it can be done by
   //sending a 0x00 dummy byte in front of the actual frame.  
   port->writeDummyByte();
   bool res = port->write((uint8_t*)&buf, sizeof(buf)) == sizeof(buf);
@@ -227,7 +228,7 @@ bool VTXControl::sa_getSettings()
   DEBUG("sa_GetSettings, push to write:" + (String)sizeof(buf));  
   //according to SA documentation:
   //The SmartAudio line need to be low before a frame is sent. 
-  //If the host MCU can’t handle this it can be done by
+  //If the host MCU canпїЅt handle this it can be done by
   //sending a 0x00 dummy byte in front of the actual frame.
   port->writeDummyByte();
   //port->write((uint8_t)0x00);
@@ -547,7 +548,7 @@ bool VTXControl::setPowerInmW(uint16_t pwrmW)
 }
 bool VTXControl::setPower(int pwrLevel)
 {
-	if (pwrLevel >= 0 && pwrLevel < sizeof(powers))//check the index of power
+	if (pwrLevel >= 0 && pwrLevel < sizeof(_powers))//check the index of power
 	{
     bool res = false;
 		clearErrors();
@@ -575,7 +576,7 @@ bool VTXControl::setPower(int pwrLevel)
 				}
 				//in milliWatts      
 				if (initialized)
-					res = trampSetPower(powers[pwrLevel]);				
+					res = trampSetPower(_powers[pwrLevel]);				
 			}
       break;
 			}
@@ -602,15 +603,15 @@ bool VTXControl::setNextChannel()
 }
 uint16_t VTXControl::getPowerInmW(int pwrIndex)
 {
-  int pwrslen = sizeof(powers) / sizeof(powers[0]);  
-  return (pwrIndex >= 0 && pwrIndex < pwrslen) ? powers [pwrIndex] : 0;
+  int pwrslen = sizeof(_powers) / sizeof(_powers[0]);  
+  return (pwrIndex >= 0 && pwrIndex < pwrslen) ? _powers [pwrIndex] : 0;
 }
 int VTXControl::getPowerIndexFromMW(uint16_t pwrInmW)
 {
-  int pwrslen = sizeof(powers) / sizeof(powers[0]);
+  int pwrslen = sizeof(_powers) / sizeof(_powers[0]);
   for (int i = 0; i < pwrslen; i++)
   { 
-    if (powers[i] == pwrInmW) return i;
+    if (_powers[i] == pwrInmW) return i;
   }
   return -1;//not found
 }
@@ -1024,7 +1025,7 @@ bool VTXControl::trampReadResponse()
     port->flush();    
     // successful response, wait another 100ms to give the VTX a chance to recover
     // before sending another command.
-    delay(100);//здесь можно использовать delay
+    delay(100);//пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅ пїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅпїЅ delay
     DEBUG("trampReadResponse:Succesfull");
     return true;
   }
