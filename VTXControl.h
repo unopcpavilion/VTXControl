@@ -102,7 +102,7 @@ private:
   const uint16_t* _powers;//table of powers in mW
   int _power_size;
   const uint16_t* _freqs;//table of frequencies in MHz
-  int _freq_size;
+  int _freqs_size;
 
   //some utility functions  
   int getChannelIndex(uint16_t freq);
