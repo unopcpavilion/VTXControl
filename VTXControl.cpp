@@ -17,7 +17,7 @@ VTXControl::VTXControl(
   int vtxMode, 
   int softPin, 
   const uint16_t* powers,
-  const uint16_t freqs,
+  const uint16_t* freqs,
   int responseTimeOut = 1000, 
   bool smartBaudRate = true, 
   int numtries=3)
@@ -592,13 +592,13 @@ bool VTXControl::setPower(int pwrLevel)
 bool VTXControl::setPrevChannel()
 {
   int newCh = ch_index - 1;
-  if (newCh < 0) newCh = sizeof(freqs)/sizeof(freqs[0]) - 1;
+  if (newCh < 0) newCh = sizeof(_freqs)/sizeof(_freqs[0]) - 1;
   return setChannel(newCh);
 }
 bool VTXControl::setNextChannel()
 {
   int newCh = ch_index + 1;
-  if (newCh >= sizeof(freqs) / sizeof(freqs[0])) newCh = 0;
+  if (newCh >= sizeof(_freqs) / sizeof(_freqs[0])) newCh = 0;
   return setChannel(newCh);
 }
 uint16_t VTXControl::getPowerInmW(int pwrIndex)
@@ -635,15 +635,15 @@ int VTXControl::getPowerIndexFromV1(uint16_t pwrValue)
 }
 uint16_t VTXControl::getChannelFrequency(int chIndex)
 {
-  int freqslen = sizeof(freqs) / sizeof(freqs[0]);
-  return (chIndex >= 0 && chIndex < freqslen) ? freqs[chIndex] : 0;
+  int freqslen = sizeof(_freqs) / sizeof(_freqs[0]);
+  return (chIndex >= 0 && chIndex < freqslen) ? _freqs[chIndex] : 0;
 }
 int VTXControl::getChannelIndex(uint16_t freq)
 {
-  int freqslen = sizeof(freqs) / sizeof(freqs[0]);
+  int freqslen = sizeof(_freqs) / sizeof(_freqs[0]);
   for (int i = 0; i < freqslen; i++)
   {
-    if (freqs[i] == freq) return i;
+    if (_freqs[i] == freq) return i;
   }
   return -1;//not found
 }
@@ -695,7 +695,7 @@ bool VTXControl::setFrequency(uint16_t freq)
 // Sets the specified frequency to the VTX
 bool VTXControl::setChannel(int chIndex)
 {
-  if (chIndex >= 0 && chIndex < sizeof(freqs) / sizeof(freqs[0]))
+  if (chIndex >= 0 && chIndex < sizeof(_freqs) / sizeof(_freqs[0]))
   {
     clearErrors();
     bool res = false;
@@ -721,7 +721,7 @@ bool VTXControl::setChannel(int chIndex)
           trampInit();
         }
         if (initialized)
-          res = trampSetFrequency(freqs[chIndex]);
+          res = trampSetFrequency(_freqs[chIndex]);
       }
       break;
       }
