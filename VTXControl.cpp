@@ -16,9 +16,9 @@ VTXControl::VTXControl(
     int vtxMode,
     int softPin,
     const uint16_t powers[],
-    int powers_size,
+    int powers_len,
     const uint16_t freqs[],
-    int freqs_size,
+    int freqs_len,
     int responseTimeOut = 1000,
     bool smartBaudRate = true,
     int numtries = 3)
@@ -30,9 +30,9 @@ VTXControl::VTXControl(
   _numtries = numtries;
   _smartBaudRate = smartBaudRate;
   _powers = powers;
-  _power_size = powers_size;
+  _power_size = powers_len;
   _freqs = freqs;
-  _freqs_size = freqs_size;
+  _freqs_size = freqs_len;
 
   // with SmartAudio protocol according to TBS documentation
   //!!! Please do remember, for SmartAudio - logic level = 3.3V !!!
@@ -602,24 +602,24 @@ bool VTXControl::setPrevChannel()
 {
   int newCh = ch_index - 1;
   if (newCh < 0)
-    newCh = _freqs_size / sizeof(_freqs[0]) - 1;
+    newCh = _freqs_size - 1;
   return setChannel(newCh);
 }
 bool VTXControl::setNextChannel()
 {
   int newCh = ch_index + 1;
-  if (newCh >= _freqs_size / sizeof(_freqs[0]))
+  if (newCh >= _freqs_size)
     newCh = 0;
   return setChannel(newCh);
 }
 uint16_t VTXControl::getPowerInmW(int pwrIndex)
 {
-  int pwrslen = _power_size / sizeof(_powers[0]);
+  int pwrslen = _power_size;
   return (pwrIndex >= 0 && pwrIndex < pwrslen) ? _powers[pwrIndex] : 0;
 }
 int VTXControl::getPowerIndexFromMW(uint16_t pwrInmW)
 {
-  int pwrslen = _power_size / sizeof(_powers[0]);
+  int pwrslen = _power_size;
   for (int i = 0; i < pwrslen; i++)
   {
     if (_powers[i] == pwrInmW)
@@ -649,12 +649,12 @@ int VTXControl::getPowerIndexFromV1(uint16_t pwrValue)
 }
 uint16_t VTXControl::getChannelFrequency(int chIndex)
 {
-  int freqslen = _freqs_size / sizeof(_freqs[0]);
+  int freqslen = _freqs_size;
   return (chIndex >= 0 && chIndex < freqslen) ? _freqs[chIndex] : 0;
 }
 int VTXControl::getChannelIndex(uint16_t freq)
 {
-  int freqslen = _freqs_size / sizeof(_freqs[0]);
+  int freqslen = _freqs_size;
   for (int i = 0; i < freqslen; i++)
   {
     if (_freqs[i] == freq)
@@ -710,7 +710,7 @@ bool VTXControl::setFrequency(uint16_t freq)
 // Sets the specified frequency to the VTX
 bool VTXControl::setChannel(int chIndex)
 {
-  if (chIndex >= 0 && chIndex < _freqs_size / sizeof(_freqs[0]))
+  if (chIndex >= 0 && chIndex < _freqs_size)
   {
     clearErrors();
     bool res = false;
