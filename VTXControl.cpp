@@ -9,7 +9,7 @@
 // uint16_t powers[5] = { 25, 200, 400, 800, 1600 };//in mW
 const uint16_t powers_v1[4] = {7 /*25mw*/, 16 /*200mw*/, 25 /*500mw*/, 40 /*800mw*/}; // for SmartAudio protocol v1
 // Smartaudio v2.1 protocol seems to be not documented (TBS documented just v1 and v2), but defined in ArduPilot
-const uint16_t powers_v21[4] = {14 /*25mw*/, 20 /*200mw*/, 26 /*500mw*/, 30 /*800mw*/}; // for SmartAudio protocol v2.1 in dbm
+const uint16_t powers_v21[4] = {14 /*25mw*/, 20 /*200mw*/, 26 /*500mw*/, 46 /*5w*/}; // for SmartAudio protocol v2.1 in dbm
 
 // Instantiates the VTX object with the specified parameters
 VTXControl::VTXControl(
