@@ -76,6 +76,7 @@ public:
   int getPowerLevel() { return pwr_Level; }
   int getChannelIndex() { return ch_index; }
   bool getPitMode() { return pitMode; }
+  uint16_t getFrequency() { return vtx_mode == VTXMode::SmartAudio ? sa_current_freq : getChannelFrequency(ch_index); }
   bool sa_readResponse();
   void clearErrors();
   VTXErrors getErrors();
@@ -93,6 +94,7 @@ private:
   ProtocolVersion sa_protocol_version;//smart audio protocol version
   int pwr_Level = -1;//default value -1 means not updated (not requested from VTX)
   int ch_index = -1;//default value -1 means not updated (not requested from VTX)
+  uint16_t sa_current_freq = 0;//last frequency (in MHz) confirmed by the VTX via SmartAudio, 0 means not updated
   bool pitMode = false;
   bool initialized = false;//tramp protocol needs to be initialized, so this var reflects state of Tramp initialization
   int _responseTimeOut = 1000;//in ms
@@ -119,7 +121,8 @@ private:
   //bool sa_setPitMode(int enabled);
   bool sa_getSettings();
   bool sa_setChannel(uint8_t channel);
-  bool sa_setPower(int pwrLevel);      
+  bool sa_setFrequency(uint16_t freq);
+  bool sa_setPower(int pwrLevel);
   bool trampSendPacket(uint8_t* packet, bool respRequired);//trampFrame_t* packet);
   bool trampPush(const uint8_t* packet);//const trampFrame_t* object);
   bool trampSendCmd(uint8_t cmd);

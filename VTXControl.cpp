@@ -230,6 +230,28 @@ bool VTXControl::sa_setChannel(uint8_t channel)
 
   return res;
 }
+bool VTXControl::sa_setFrequency(uint16_t freq)
+{
+  static uint8_t buf[7] = {0xAA, 0x55, SMARTAUDIO_CMD_SET_FREQUENCY, 2, 0x00, 0x00, 0x00};
+  uint16_t value = freq & SMARTAUDIO_FREQUENCY_MASK;
+  // SmartAudio multi-byte fields are sent big-endian (high byte first), unlike Tramp
+  buf[4] = (value >> 8) & 0xFF;
+  buf[5] = value & 0xFF;
+  buf[6] = sa_CRC8(buf, 6);
+  DEBUG("sa_setFrequency, push to write:" + (String)sizeof(buf));
+  // according to SA documentation:
+  // The SmartAudio line need to be low before a frame is sent.
+  // If the host MCU can�t handle this it can be done by
+  // sending a 0x00 dummy byte in front of the actual frame.
+  port->writeDummyByte();
+  bool res = port->write((uint8_t *)&buf, sizeof(buf)) == sizeof(buf);
+#if SMARTAUDIO_WRITE_ZEROBYTES_AT_THE_END
+  port->write((uint8_t)0x00);
+#endif
+  port->listen();
+
+  return res;
+}
 bool VTXControl::sa_getSettings()
 {
   // taken from betaflight vtx_smartaudio.c
@@ -479,6 +501,17 @@ bool VTXControl::sa_parseResponseBuffer(const uint8_t *buffer)
     }
   }
   break;
+  case SMARTAUDIO_RSP_SET_FREQUENCY:
+  {
+    DEBUG("sa_parse_response_buffer(), SetFrequency");
+    // SmartAudio multi-byte fields are sent big-endian (high byte first), unlike Tramp
+    const uint16_t freqRaw = ((uint16_t)buffer[4] << 8) | buffer[5];
+    sa_current_freq = freqRaw & SMARTAUDIO_FREQUENCY_MASK;
+    int idx = getChannelIndex(sa_current_freq);
+    if (idx != -1) // update channel index only if the frequency matches a known channel
+      ch_index = idx;
+  }
+  break;
   case SMARTAUDIO_RSP_SET_CHANNEL:
   {
     DEBUG("sa_parse_response_buffer(), SetChannel");
@@ -673,15 +706,9 @@ bool VTXControl::setFrequency(uint16_t freq)
     {
     case VTXMode::SmartAudio:
     {
-      // debug("Setting channel to %d", channel);
-      // if (push_uint8_command_frame(SMARTAUDIO_CMD_SET_CHANNEL, chIndex))
-      int chIndex = getChannelIndex(freq);
-      if (chIndex != -1) // if frequency found in the table of freqs
+      if (sa_setFrequency(freq))
       {
-        if (sa_setChannel(chIndex))
-        {
-          res = sa_readResponse();
-        }
+        res = sa_readResponse();
       }
     }
     break;
@@ -700,7 +727,7 @@ bool VTXControl::setFrequency(uint16_t freq)
     // if channel set succesfully - check the updated info from VTX
     if (res)
     {
-      uint16_t curr_freq = getChannelFrequency(ch_index);
+      uint16_t curr_freq = vtx_mode == VTXMode::SmartAudio ? sa_current_freq : getChannelFrequency(ch_index);
       if (curr_freq == freq)
         return true;
     }
