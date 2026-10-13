@@ -48,7 +48,7 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
 #include <Arduino.h>
-#include <SoftwareSerialWithHalfDuplex.h>
+#include "SoftwareSerialWithHalfDuplex.h"
 #include <util/delay_basic.h>
 #include <math.h>
 
@@ -613,7 +613,7 @@ sswhdErrors SoftwareSerialWithHalfDuplex::getErrors()
 
 void SoftwareSerialWithHalfDuplex::setError(sswhdErrors error)
 {
-	errors |= error;
+	errors = static_cast<sswhdErrors>(static_cast<uint8_t>(errors) | static_cast<uint8_t>(error));
 }
 
 void SoftwareSerialWithHalfDuplex::setRxIntMsk(bool enable)

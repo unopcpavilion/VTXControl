@@ -5,20 +5,16 @@
 #include "VTX_Tramp.h"
 #include "SoftwareSerialWithHalfDuplex.h"
 
-// these parameters for JHEMCU RuiBet Tran3016W
-// uint16_t powers[5] = { 25, 200, 400, 800, 1600 };//in mW
-const uint16_t powers_v1[4] = {7 /*25mw*/, 16 /*200mw*/, 25 /*500mw*/, 40 /*800mw*/}; // for SmartAudio protocol v1
+// SmartAudio v1/v2 have 4 standard power levels (TBS documentation): 25mW, 200mW, 500mW, 800mW
+const uint8_t sa_powers_dbm[4] = {14 /*25mw*/, 23 /*200mw*/, 27 /*500mw*/, 29 /*800mw*/};
+const uint8_t powers_v1[4] = {7 /*25mw*/, 16 /*200mw*/, 25 /*500mw*/, 40 /*800mw*/}; // coded values for SmartAudio protocol v1
 // Smartaudio v2.1 protocol seems to be not documented (TBS documented just v1 and v2), but defined in ArduPilot
-const uint16_t powers_v21[4] = {14 /*25mw*/, 20 /*200mw*/, 26 /*500mw*/, 46 /*5w*/}; // for SmartAudio protocol v2.1 in dbm
+// v2.1 sends power in dBm, list of supported dBm levels is reported by VTX in settings response
 
 // Instantiates the VTX object with the specified parameters
 VTXControl::VTXControl(
     int vtxMode,
     int softPin,
-    const uint16_t powers[],
-    int powers_len,
-    const uint16_t freqs[],
-    int freqs_len,
     int responseTimeOut = 1000,
     bool smartBaudRate = true,
     int numtries = 3)
@@ -29,10 +25,6 @@ VTXControl::VTXControl(
   _responseTimeOut = responseTimeOut;
   _numtries = numtries;
   _smartBaudRate = smartBaudRate;
-  _powers = powers;
-  _power_size = powers_len;
-  _freqs = freqs;
-  _freqs_size = freqs_len;
 
   // with SmartAudio protocol according to TBS documentation
   //!!! Please do remember, for SmartAudio - logic level = 3.3V !!!
@@ -164,59 +156,45 @@ bool VTXControl::testSMAResponseFromSerial1()
   return res;
 }
 #endif
-// bool VTXControl::sa_setPitMode(int enabled)
-//{
-//   //activate - IN RANGE PIT FLAG
-//   //deactivate - (Quit PIT MODE
-//   uint8_t mode = enabled ? 0x01 : 0x04;
-//   if (push_uint8_command_frame(SMARTAUDIO_CMD_SET_MODE, mode))
-//   {
-//     //DEBUG("End sma_setPitMode");
-//     return readResponse(); //updateParameters();
-//   }
-//   return false;
-// }
-bool VTXControl::sa_setPower(int pwrLevel)
+bool VTXControl::sa_setPower(uint8_t level)
 {
-  static uint8_t buf[6] = {0xAA, 0x55, SMARTAUDIO_CMD_SET_POWER, 1, 0x00, 0x00};
   switch (sa_protocol_version)
   {
   case ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v1:
-    // res = push_uint8_command_frame(SMARTAUDIO_CMD_SET_POWER, powers_v1[pwrLevel]);
-    buf[4] = powers_v1[pwrLevel];
-    break;
-  case ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v2:
-    // debug("Setting power to %d", power_level);
-    // res = push_uint8_command_frame(SMARTAUDIO_CMD_SET_POWER, pwrLevel);
-    buf[4] = pwrLevel;
-    break;
+    return sa_sendU8Command(SMARTAUDIO_CMD_SET_POWER, powers_v1[level]);
   case ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v21:
-    // res = push_uint8_command_frame(SMARTAUDIO_CMD_SET_POWER, powers_v21[pwrLevel] | 0x80);
-    buf[4] = powers_v21[pwrLevel] | 0x80;
-    break;
+    // MSB set means "power in dBm"
+    return sa_sendU8Command(SMARTAUDIO_CMD_SET_POWER, sa_dbm_levels[level] | 0x80);
+  default:
+    return sa_sendU8Command(SMARTAUDIO_CMD_SET_POWER, level);
   }
+}
+bool VTXControl::sa_setPitMode(bool enabled)
+{
+  if (enabled)
+  {
+    // v2.1 only: pitmode is enabled by setting power to 0dBm (as Betaflight does),
+    // this way VTX doesn't boot into pitmode on next power up
+    return sa_sendU8Command(SMARTAUDIO_CMD_SET_POWER, 0 | 0x80);
+  }
+  // keep in-range/out-range pitmode flags and lock state as they are, just clear pitmode
+  uint8_t mode = SMARTAUDIO_MODE_CLR_PITMODE;
+  if (sa_operation_mode & SMARTAUDIO_MODE_GET_IN_RANGE_PITMODE)
+    mode |= SMARTAUDIO_MODE_SET_IN_RANGE_PITMODE;
+  if (sa_operation_mode & SMARTAUDIO_MODE_GET_OUT_RANGE_PITMODE)
+    mode |= SMARTAUDIO_MODE_SET_OUT_RANGE_PITMODE;
+  if (sa_operation_mode & SMARTAUDIO_MODE_GET_UNLOCK)
+    mode |= SMARTAUDIO_MODE_SET_UNLOCK;
+  return sa_sendU8Command(SMARTAUDIO_CMD_SET_MODE, mode);
+}
+bool VTXControl::sa_sendU8Command(uint8_t cmd, uint8_t value)
+{
+  static uint8_t buf[6] = {0xAA, 0x55, 0x00, 1, 0x00, 0x00};
+  buf[2] = cmd;
+  buf[4] = value;
   buf[5] = sa_CRC8(buf, 5);
 
-  DEBUG("sa_setPower, push to write:" + (String)sizeof(buf));
-  // according to SA documentation:
-  // The SmartAudio line need to be low before a frame is sent.
-  // If the host MCU can�t handle this it can be done by
-  // sending a 0x00 dummy byte in front of the actual frame.
-  port->writeDummyByte();
-  bool res = port->write((uint8_t *)&buf, sizeof(buf)) == sizeof(buf);
-#if SMARTAUDIO_WRITE_ZEROBYTES_AT_THE_END
-  port->write((uint8_t)0x00);
-#endif
-  port->listen();
-
-  return res;
-}
-bool VTXControl::sa_setChannel(uint8_t channel)
-{
-  static uint8_t buf[6] = {0xAA, 0x55, SMARTAUDIO_CMD_SET_CHANNEL, 1, 0, 0};
-  buf[4] = channel;
-  buf[5] = sa_CRC8(buf, 5); // exclude crc byte
-  DEBUG("sa_setChannel, push to write:" + (String)sizeof(buf));
+  DEBUG("sa_sendU8Command, push to write:" + (String)sizeof(buf));
   // according to SA documentation:
   // The SmartAudio line need to be low before a frame is sent.
   // If the host MCU can�t handle this it can be done by
@@ -449,54 +427,81 @@ bool VTXControl::sa_parseResponseBuffer(const uint8_t *buffer)
   switch (header->command)
   {
   case SMARTAUDIO_RSP_GET_SETTINGS_V1:
-  {
-    DEBUG("sa_parse_response_buffer(), Protocol version 1");
-    sa_protocol_version = SMARTAUDIO_SPEC_PROTOCOL_v1;
-    const SettingsResponseFrame *resp = (const SettingsResponseFrame *)buffer;
-    pwr_Level = getPowerIndexFromV1(resp->power);
-    ch_index = resp->channel;
-    pitMode = (resp->operationMode & 0x04) != 0;
-  }
-  break;
   case SMARTAUDIO_RSP_GET_SETTINGS_V2:
-  {
-    DEBUG("sa_parse_response_buffer(), Protocol version 2");
-    sa_protocol_version = SMARTAUDIO_SPEC_PROTOCOL_v2;
-    const SettingsResponseFrame *respv2 = (const SettingsResponseFrame *)buffer;
-    pwr_Level = respv2->power;
-    ch_index = respv2->channel;
-    pitMode = (respv2->operationMode & 0x04) != 0;
-  }
-  break;
-
   case SMARTAUDIO_RSP_GET_SETTINGS_V21:
   {
-    DEBUG("sa_parse_response_buffer(), Protocol version 2.1");
-    sa_protocol_version = SMARTAUDIO_SPEC_PROTOCOL_v21;
-    const SettingsExtendedResponseFrame *respv21 = (const SettingsExtendedResponseFrame *)buffer;
-    pwr_Level = getPowerIndexFromDbm(respv21->power_dbm);
-    ch_index = respv21->settings.channel;
-    pitMode = (respv21->settings.operationMode & 0x04) != 0;
+    // settings frame: [4] channel, [5] power, [6] operation mode, [7..8] frequency (big-endian)
+    // v2.1 extension: [9] current power in dBm, [10] amount of power levels, [11..] dBm levels (amount + 1 values)
+    const uint8_t channel = buffer[4];
+    const uint8_t power = buffer[5];
+    const uint8_t operationMode = buffer[6];
+    const uint16_t frequency = (((uint16_t)buffer[7] << 8) | buffer[8]) & SMARTAUDIO_FREQUENCY_MASK;
+    sa_operation_mode = operationMode;
+    pitMode = (operationMode & SMARTAUDIO_MODE_GET_PITMODE) != 0;
+    if (operationMode & SMARTAUDIO_MODE_GET_FREQ_BY_FREQ) // frequency mode, otherwise frequency field is not reliable (channel mode)
+      cur_freq = frequency;
+    sa_version_known = true;
+    DEBUG("sa_parse_response_buffer(): Full status received:");
+    DEBUG("  command     : " + (String)header->command);
+    DEBUG("  channel     : " + (String)channel);
+    DEBUG("  power (raw)  : " + (String)power);
+    DEBUG("  opMode (raw) : " + (String)operationMode);
+    DEBUG("  pitMode     : " + (String)((operationMode & SMARTAUDIO_MODE_GET_PITMODE) != 0));
+    DEBUG("  freqByFreq  : " + (String)((operationMode & SMARTAUDIO_MODE_GET_FREQ_BY_FREQ) != 0));
+    DEBUG("  frequency   : " + (String)frequency);
+    if (header->command == SMARTAUDIO_RSP_GET_SETTINGS_V1)
+    {
+      DEBUG("sa_parse_response_buffer(), Protocol version 1");
+      sa_protocol_version = SMARTAUDIO_SPEC_PROTOCOL_v1;
+      sa_setCurrentLevel(sa_levelFromV1(power));
+    }
+    else if (header->command == SMARTAUDIO_RSP_GET_SETTINGS_V2)
+    {
+      DEBUG("sa_parse_response_buffer(), Protocol version 2");
+      sa_protocol_version = SMARTAUDIO_SPEC_PROTOCOL_v2;
+      sa_setCurrentLevel(power);
+    }
+    else
+    {
+      DEBUG("sa_parse_response_buffer(), Protocol version 2.1");
+      sa_protocol_version = SMARTAUDIO_SPEC_PROTOCOL_v21;
+      if (header->length >= 8) // power levels list is present
+      {
+        uint8_t count = buffer[10] + 1;
+        if (count > sizeof(sa_dbm_levels))
+          count = sizeof(sa_dbm_levels);
+        for (uint8_t i = 0; i < count; i++)
+          sa_dbm_levels[i] = buffer[11 + i];
+        sa_dbm_levels_count = count;
+      }
+      sa_setCurrentLevel(sa_levelFromDbm(buffer[9]));
+      setCurrentDbm(buffer[9]);
+      pitMode = pitMode || buffer[9] == 0; // v2.1 pitmode can be set as 0dBm power
+      DEBUG("  curPower(dBm): " + (String)buffer[9]);
+      DEBUG("  powerLevels : " + (String)sa_dbm_levels_count);
+      for (uint8_t i = 0; i < sa_dbm_levels_count; i++)
+        DEBUG("    level[" + (String)i + "] dBm: " + (String)sa_dbm_levels[i]);
+    }
   }
   break;
   case SMARTAUDIO_RSP_SET_POWER:
   {
-
-    const U16ResponseFrame *respu16 = (const U16ResponseFrame *)buffer;
-    const uint8_t power = respu16->payload & 0xFF;
+    const uint8_t power = buffer[4];
     switch (sa_protocol_version)
     {
     case ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v21:
       DEBUG("sa_parse_response_buffer(), SetPower:Protocol version 2.1");
-      pwr_Level = getPowerIndexFromDbm(power);
+      sa_setCurrentLevel(sa_levelFromDbm(power & 0x7F));
+      setCurrentDbm(power & 0x7F);
+      pitMode = (sa_operation_mode & SMARTAUDIO_MODE_GET_PITMODE) != 0 || pwr_dBm == 0;
       break;
     case ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v1:
       DEBUG("sa_parse_response_buffer(), SetPower:Protocol version 1");
-      pwr_Level = getPowerIndexFromV1(power);
+      sa_setCurrentLevel(sa_levelFromV1(power));
       break;
     default:
       DEBUG("sa_parse_response_buffer(), SetPower:Protocol version 2");
-      pwr_Level = power;
+      sa_setCurrentLevel(power);
       break;
     }
   }
@@ -506,171 +511,109 @@ bool VTXControl::sa_parseResponseBuffer(const uint8_t *buffer)
     DEBUG("sa_parse_response_buffer(), SetFrequency");
     // SmartAudio multi-byte fields are sent big-endian (high byte first), unlike Tramp
     const uint16_t freqRaw = ((uint16_t)buffer[4] << 8) | buffer[5];
-    sa_current_freq = freqRaw & SMARTAUDIO_FREQUENCY_MASK;
-    int idx = getChannelIndex(sa_current_freq);
-    if (idx != -1) // update channel index only if the frequency matches a known channel
-      ch_index = idx;
-  }
-  break;
-  case SMARTAUDIO_RSP_SET_CHANNEL:
-  {
-    DEBUG("sa_parse_response_buffer(), SetChannel");
-    const U8ResponseFrame *respu8 = (const U8ResponseFrame *)buffer;
-    uint16_t channel = respu8->payload;
-    ch_index = channel;
-    // debug("Channel was set to %d", resp->payload);
+    cur_freq = freqRaw & SMARTAUDIO_FREQUENCY_MASK;
   }
   break;
   }
   return true;
 }
 
-// bool VTXControl::setPitMode(bool enabled)
-//{
-//   clearErrors();
-//   switch (vtx_mode)
-//   {
-//   case VTXMode::SmartAudio:
-//     //DEBUG("setPitMode: SMA");
-//     return sa_setPitMode(enabled);
-//   case VTXMode::Tramp:
-//     //DEBUG("setPitMode: Tramp");
-//     return trampSetPitMode(enabled);
-//   }
-//   return false;
-// }
-
-bool VTXControl::setPowerInmW(uint16_t pwrmW)
+bool VTXControl::setPitMode(bool enabled)
 {
-  bool res = false;
-  clearErrors();
-  for (int i = 0; i < _numtries; i++) // trying to set _numtries times
+  if (vtx_mode == VTXMode::Tramp)
   {
-    switch (vtx_mode)
-    {
-    case VTXMode::SmartAudio:
-    {
-      int pwrLevel = getPowerIndexFromMW(pwrmW);
-      if (pwrLevel != -1) // pwr level(index) not found
-      {
-        if (sa_setPower(pwrLevel))
-        {
-          if (sa_readResponse())
-          {
-            res = true;
-          }
-        }
-      }
-    }
-    break;
-    case VTXMode::Tramp: // tramp protocol sets power in mW
+    clearErrors();
+    for (int i = 0; i < _numtries; i++) // trying to set _numtries times
     {
       // tramp protocol needs to be initialized
       if (!initialized)
       {
         trampInit();
       }
-      // in milliWatts
-      if (initialized)
-      {
-        res = trampSetPower(pwrmW);
-      }
-    }
-    break;
-    }
-    // if procedure of setting is succesfull - check acvieved result
-    if (res)
-    {
-      int currPwrmW = getPowerInmW(pwr_Level);
-      if (currPwrmW == pwrmW)
+      // tramp doesn't confirm set pitmode, so we request status to check acvieved result
+      if (initialized && trampSetPitMode(enabled) && trampGetStatus() && pitMode == enabled)
         return true;
     }
+    return false;
+  }
+  // SmartAudio: we need to know protocol version and operation mode
+  if (!sa_version_known && !sa_updateSettings())
+    return false;
+  // v1 has no pitmode control, v2 can only leave pitmode by software (same as Betaflight)
+  if (sa_protocol_version == ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v1 ||
+      (enabled && sa_protocol_version == ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v2))
+    return false;
+  if (pitMode == enabled)
+    return true;
+  if (enabled)
+    sa_pit_prev_level = pwr_Level; // v2.1 pitmode is 0dBm power, so remember power to restore it later
+  clearErrors();
+  for (int i = 0; i < _numtries; i++) // trying to set _numtries times
+  {
+    if (!sa_setPitMode(enabled) || !sa_readResponse())
+      continue;
+    // v2.1: pitmode set by 0dBm power is left by restoring power
+    if (!enabled && sa_protocol_version == ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v21 && pwr_dBm == 0)
+      setPowerLevel(sa_pit_prev_level > 0 ? sa_pit_prev_level : 1);
+    // pitmode/mode responses are not reliable, so we request settings to check acvieved result
+    if (sa_getSettings() && sa_readResponse() && pitMode == enabled)
+      return true;
   }
   return false;
 }
-bool VTXControl::setPower(int pwrLevel)
+
+uint8_t VTXControl::mwToDbm(uint16_t pwrmW)
 {
-  if (pwrLevel >= 0 && pwrLevel < _power_size) // check the index of power
+  if (pwrmW == 0)
+    return 0;
+  return (uint8_t)(10.0 * log10(pwrmW) + 0.5);
+}
+uint16_t VTXControl::dbmToMw(uint8_t pwrDbm)
+{
+  if (pwrDbm >= 49) // 49dBm ~ 79W, out of uint16_t range
+    return 0xFFFF;
+  return (uint16_t)(pow(10.0, pwrDbm / 10.0) + 0.5);
+}
+void VTXControl::setCurrentMw(uint16_t pwrmW)
+{
+  pwr_mW = pwrmW;
+  pwr_dBm = mwToDbm(pwrmW);
+}
+void VTXControl::setCurrentDbm(uint8_t pwrDbm)
+{
+  pwr_dBm = pwrDbm;
+  pwr_mW = pwrDbm != 0 ? dbmToMw(pwrDbm) : 0;
+}
+int VTXControl::sa_levelsCount()
+{
+  if (sa_protocol_version == ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v21)
+    return sa_dbm_levels_count;
+  return sizeof(sa_powers_dbm) / sizeof(sa_powers_dbm[0]);
+}
+uint8_t VTXControl::sa_levelToDbm(int level)
+{
+  if (level < 0 || level >= sa_levelsCount())
+    return 0; // unknown
+  if (sa_protocol_version == ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v21)
+    return sa_dbm_levels[level];
+  return sa_powers_dbm[level];
+}
+int VTXControl::sa_levelFromDbm(uint8_t pwrDbm)
+{
+  int best = -1;
+  int bestDiff = 0;
+  for (int i = 0; i < sa_levelsCount(); i++)
   {
-    bool res = false;
-    clearErrors();
-    for (int i = 0; i < _numtries; i++) // trying to set _numtries times
+    int diff = abs((int)sa_levelToDbm(i) - (int)pwrDbm);
+    if (best == -1 || diff < bestDiff)
     {
-      switch (vtx_mode)
-      {
-      case VTXMode::SmartAudio:
-      {
-        if (sa_setPower(pwrLevel))
-        {
-          if (sa_readResponse())
-          {
-            res = true;
-          }
-        }
-      }
-      break;
-      case VTXMode::Tramp: // tramp protocol sets power in mW
-      {
-        // tramp protocol needs to be initialized
-        if (!initialized)
-        {
-          trampInit();
-        }
-        // in milliWatts
-        if (initialized)
-          res = trampSetPower(_powers[pwrLevel]);
-      }
-      break;
-      }
-      // if procedure of setting is succesfull - check acvieved result
-      if (res && pwr_Level == pwrLevel)
-      {
-        return true;
-      }
+      best = i;
+      bestDiff = diff;
     }
   }
-  return false;
+  return best; // -1 if no levels known
 }
-bool VTXControl::setPrevChannel()
-{
-  int newCh = ch_index - 1;
-  if (newCh < 0)
-    newCh = _freqs_size - 1;
-  return setChannel(newCh);
-}
-bool VTXControl::setNextChannel()
-{
-  int newCh = ch_index + 1;
-  if (newCh >= _freqs_size)
-    newCh = 0;
-  return setChannel(newCh);
-}
-uint16_t VTXControl::getPowerInmW(int pwrIndex)
-{
-  int pwrslen = _power_size;
-  return (pwrIndex >= 0 && pwrIndex < pwrslen) ? _powers[pwrIndex] : 0;
-}
-int VTXControl::getPowerIndexFromMW(uint16_t pwrInmW)
-{
-  int pwrslen = _power_size;
-  for (int i = 0; i < pwrslen; i++)
-  {
-    if (_powers[i] == pwrInmW)
-      return i;
-  }
-  return -1; // not found
-}
-int VTXControl::getPowerIndexFromDbm(uint16_t pwrInDbm)
-{
-  int pwrslen = sizeof(powers_v21) / sizeof(powers_v21[0]);
-  for (int i = 0; i < pwrslen; i++)
-  {
-    if (powers_v21[i] == pwrInDbm)
-      return i;
-  }
-  return -1; // not found
-}
-int VTXControl::getPowerIndexFromV1(uint16_t pwrValue)
+int VTXControl::sa_levelFromV1(uint8_t pwrValue)
 {
   int pwrslen = sizeof(powers_v1) / sizeof(powers_v1[0]);
   for (int i = 0; i < pwrslen; i++)
@@ -680,20 +623,63 @@ int VTXControl::getPowerIndexFromV1(uint16_t pwrValue)
   }
   return -1; // not found
 }
-uint16_t VTXControl::getChannelFrequency(int chIndex)
+void VTXControl::sa_setCurrentLevel(int level)
 {
-  int freqslen = _freqs_size;
-  return (chIndex >= 0 && chIndex < freqslen) ? _freqs[chIndex] : 0;
+  pwr_Level = level;
+  setCurrentDbm(sa_levelToDbm(level));
 }
-int VTXControl::getChannelIndex(uint16_t freq)
+
+bool VTXControl::setPowerMw(uint16_t pwrmW)
 {
-  int freqslen = _freqs_size;
-  for (int i = 0; i < freqslen; i++)
+  if (vtx_mode == VTXMode::Tramp) // tramp protocol sets power in mW
+    return trampSetPowerChecked(pwrmW);
+  return setPowerDbm(mwToDbm(pwrmW));
+}
+bool VTXControl::setPowerDbm(uint8_t pwrDbm)
+{
+  if (vtx_mode == VTXMode::Tramp)
+    return trampSetPowerChecked(dbmToMw(pwrDbm));
+  // SmartAudio: we need to know protocol version (and v2.1 power levels) before choosing a level
+  if (!sa_version_known && !sa_updateSettings())
+    return false;
+  int level = sa_levelFromDbm(pwrDbm);
+  if (level == -1)
+    return false;
+  return setPowerLevel(level);
+}
+bool VTXControl::setPowerLevel(uint8_t level)
+{
+  if (vtx_mode != VTXMode::SmartAudio)
+    return false;
+  if (!sa_version_known && !sa_updateSettings())
+    return false;
+  // v2 sends level as is (VTX can have more than 4 levels), v1 and v2.1 need a known level
+  if (sa_protocol_version != ProtocolVersion::SMARTAUDIO_SPEC_PROTOCOL_v2 && level >= sa_levelsCount())
+    return false;
+  clearErrors();
+  for (int i = 0; i < _numtries; i++) // trying to set _numtries times
   {
-    if (_freqs[i] == freq)
-      return i;
+    // if procedure of setting is succesfull - check acvieved result
+    if (sa_setPower(level) && sa_readResponse() && pwr_Level == level)
+      return true;
   }
-  return -1; // not found
+  return false;
+}
+bool VTXControl::trampSetPowerChecked(uint16_t pwrmW)
+{
+  clearErrors();
+  for (int i = 0; i < _numtries; i++) // trying to set _numtries times
+  {
+    // tramp protocol needs to be initialized
+    if (!initialized)
+    {
+      trampInit();
+    }
+    // tramp doesn't confirm set power, so we request status to check acvieved result
+    if (initialized && trampSetPower(pwrmW) && trampGetStatus() && pwr_mW == pwrmW)
+      return true;
+  }
+  return false;
 }
 
 bool VTXControl::setFrequency(uint16_t freq)
@@ -719,58 +705,15 @@ bool VTXControl::setFrequency(uint16_t freq)
       {
         trampInit();
       }
+      // tramp doesn't confirm set frequency, so we request status to check acvieved result
       if (initialized)
-        res = trampSetFrequency(freq);
+        res = trampSetFrequency(freq) && trampGetStatus();
     }
     break;
     }
     // if channel set succesfully - check the updated info from VTX
-    if (res)
-    {
-      uint16_t curr_freq = vtx_mode == VTXMode::SmartAudio ? sa_current_freq : getChannelFrequency(ch_index);
-      if (curr_freq == freq)
-        return true;
-    }
-  }
-  return false;
-}
-// Sets the specified frequency to the VTX
-bool VTXControl::setChannel(int chIndex)
-{
-  if (chIndex >= 0 && chIndex < _freqs_size)
-  {
-    clearErrors();
-    bool res = false;
-    for (int i = 0; i < _numtries; i++) // trying to set _numtries times
-    {
-      switch (vtx_mode)
-      {
-      case VTXMode::SmartAudio:
-      {
-        // debug("Setting channel to %d", channel);
-        // if (push_uint8_command_frame(SMARTAUDIO_CMD_SET_CHANNEL, chIndex))
-        if (sa_setChannel(chIndex))
-        {
-          res = sa_readResponse();
-        }
-      }
-      break;
-      case VTXMode::Tramp: // tramp protocol sets channel in Mhz
-      {
-        // tramp protocol needs to be initialized
-        if (!initialized)
-        {
-          trampInit();
-        }
-        if (initialized)
-          res = trampSetFrequency(_freqs[chIndex]);
-      }
-      break;
-      }
-      // if channel set succesfully - check the updated info from VTX
-      if (res && chIndex == ch_index)
-        return true;
-    }
+    if (res && cur_freq == freq)
+      return true;
   }
   return false;
 }
@@ -969,6 +912,11 @@ bool VTXControl::trampSetPower(uint16_t milliWatts)
   // return trampSendPacket((uint8_t*)&frame);
   return trampSendCmd(TRAMP_COMMAND_SET_POWER, milliWatts);
 }
+bool VTXControl::trampSetPitMode(bool enabled)
+{
+  // 'I' command sets active state of VTX, so pitmode is "not active"
+  return trampSendCmd(TRAMP_COMMAND_ACTIVE_STATE, enabled ? 0 : 1);
+}
 
 bool VTXControl::trampReadResponse()
 {
@@ -1051,14 +999,15 @@ bool VTXControl::trampReadResponse()
       if (freq != 0)
       {
         // update data
-        ch_index = getChannelIndex(frame->payload.settings.frequency);
-        pwr_Level = getPowerIndexFromMW(frame->payload.settings.power);
+        cur_freq = freq;
+        setCurrentMw(frame->payload.settings.power);
         pitMode = (bool)frame->payload.settings.pitModeEnabled;
-        DEBUG("trampReadResponse: Updated, Freq:" + (String)frame->payload.settings.frequency);
-        DEBUG("trampReadResponse: Converted to Channel:" + (String)ch_index);
-        DEBUG("trampReadResponse: Updated, Power in Mw:" + (String)frame->payload.settings.power);
-        DEBUG("trampReadResponse: Converted to Power Level:" + (String)pwr_Level);
-        DEBUG("trampReadResponse: Updated, PitMode:" + (String)frame->payload.settings.pitModeEnabled);
+        Serial.println("trampReadResponse: Full status received:");
+        Serial.println("  command     : " + String((char)frame->header.command));
+        Serial.println("  frequency   : " + (String)frame->payload.settings.frequency);
+        Serial.println("  power (mW)  : " + (String)frame->payload.settings.power);
+        Serial.println("  raceMode    : " + (String)frame->payload.settings.raceModeEnabled);
+        Serial.println("  pitMode     : " + (String)frame->payload.settings.pitModeEnabled);
       }
       break;
     }

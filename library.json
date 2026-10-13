@@ -1,4 +1,9 @@
 {
   "name": "VTXControl",
-  "version": "0.0.0+20251112100457"
+  "version": "0.0.0+20251112100457",
+  "build": {
+    "srcDir": ".",
+    "includeDir": ".",
+    "srcFilter": ["+<*.cpp>"]
+  }
 }

@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <SoftwareSerialWithHalfDuplex.h>
+#include "SoftwareSerialWithHalfDuplex.h"
 #include "VTX_SmartAudio.h"
 #include "VTX_Tramp.h"
 #ifndef VTXControl_h
@@ -55,28 +55,25 @@ class VTXControl
 public:  
   VTXControl(
     int vtxMode, 
-    int softPin, 
-    const uint16_t powers[],
-      int powers_len,
-    const uint16_t freqs[],
-      int freqs_len,
-    int responseTimeOut = 1000, 
-    bool smartBaudRate = true, 
+    int softPin,
+    int responseTimeOut = 1000,
+    bool smartBaudRate = true,
     int numtries = 3);
   void flush();
   void waitForInMs(unsigned int ms);
-  //bool setPitMode(bool enabled);
-  bool setChannel(int freqIndex);//sets frequency by channel index
-  bool setFrequency(uint16_t freq);//set frequency by freq value
-  bool setPower(int pwrLevel);//sets power by power index in table of powers
-  bool setPowerInmW(uint16_t pwrmW);//sets power by value in mW
-  bool setNextChannel();
-  bool setPrevChannel();
-  bool updateParameters();  
-  int getPowerLevel() { return pwr_Level; }
-  int getChannelIndex() { return ch_index; }
+  bool setPitMode(bool enabled);//SmartAudio: v1 not supported, v2 can only leave pitmode, v2.1 full support
+  bool setFrequency(uint16_t freq);//set frequency by freq value in MHz
+  bool setPowerMw(uint16_t pwrmW);//sets power in mW (SmartAudio: converted to the nearest level supported by protocol version)
+  bool setPowerDbm(uint8_t pwrDbm);//sets power in dBm (Tramp: converted to mW)
+  bool setPowerLevel(uint8_t level);//SmartAudio only: sets raw power level (v1/v2: level index as VTX knows it, v2.1: index in dBm list reported by VTX)
+  bool updateParameters();
+  uint16_t getFrequency() { return cur_freq; }//in MHz, 0 means not updated
+  uint16_t getPowerMw() { return pwr_mW; }//0 means not updated/unknown
+  uint8_t getPowerDbm() { return pwr_dBm; }//0 means not updated/unknown
+  int getPowerLevel() { return pwr_Level; }//SmartAudio only: raw power level, -1 means not updated/unknown
   bool getPitMode() { return pitMode; }
-  uint16_t getFrequency() { return vtx_mode == VTXMode::SmartAudio ? sa_current_freq : getChannelFrequency(ch_index); }
+  static uint8_t mwToDbm(uint16_t pwrmW);
+  static uint16_t dbmToMw(uint8_t pwrDbm);
   bool sa_readResponse();
   void clearErrors();
   VTXErrors getErrors();
@@ -91,38 +88,41 @@ private:
   VTXErrors errors = VTXErrors::vtxNoErrors;
   long sa_offerNewSpeed(long currentSpeed);//tries to offer other baud rate to work with vtx
   void setError(VTXErrors error);
-  ProtocolVersion sa_protocol_version;//smart audio protocol version
-  int pwr_Level = -1;//default value -1 means not updated (not requested from VTX)
-  int ch_index = -1;//default value -1 means not updated (not requested from VTX)
-  uint16_t sa_current_freq = 0;//last frequency (in MHz) confirmed by the VTX via SmartAudio, 0 means not updated
+  ProtocolVersion sa_protocol_version = SMARTAUDIO_SPEC_PROTOCOL_v2;//smart audio protocol version
+  bool sa_version_known = false;//true after first successful settings response from VTX
+  uint8_t sa_operation_mode = 0;//raw operation mode from last settings response
+  int sa_pit_prev_level = -1;//v2.1 only: power level before entering pitmode
+  uint8_t sa_dbm_levels[8];//v2.1 only: power levels in dBm reported by VTX
+  uint8_t sa_dbm_levels_count = 0;
+  int pwr_Level = -1;//SmartAudio raw power level, -1 means not updated (not requested from VTX)
+  uint16_t pwr_mW = 0;//current power in mW, 0 means not updated
+  uint8_t pwr_dBm = 0;//current power in dBm, 0 means not updated
+  uint16_t cur_freq = 0;//last frequency (in MHz) reported by the VTX, 0 means not updated
   bool pitMode = false;
   bool initialized = false;//tramp protocol needs to be initialized, so this var reflects state of Tramp initialization
   int _responseTimeOut = 1000;//in ms
   int _numtries = 3;//num tries to send request and receive response, after that we try to change baud rate and try again
   bool _smartBaudRate = true;//tries to find apporpriated baud rate to communicate with VTX, if false- just work on fixed initial baudrate
-  
-  const uint16_t* _powers;//table of powers in mW
-  int _power_size;
-  const uint16_t* _freqs;//table of frequencies in MHz
-  int _freqs_size;
 
-  //some utility functions  
-  int getChannelIndex(uint16_t freq);
-  uint16_t getChannelFrequency(int chIndex);
-  int getPowerIndexFromMW(uint16_t pwrInmW);
-  int getPowerIndexFromDbm(uint16_t pwrInDbm);
-  int getPowerIndexFromV1(uint16_t pwrValue);
-  uint16_t getPowerInmW(int pwrIndex);
-    
+  //some utility functions
+  int sa_levelsCount();
+  uint8_t sa_levelToDbm(int level);
+  int sa_levelFromDbm(uint8_t pwrDbm);//nearest supported level
+  int sa_levelFromV1(uint8_t pwrValue);
+  void sa_setCurrentLevel(int level);
+  void setCurrentMw(uint16_t pwrmW);
+  void setCurrentDbm(uint8_t pwrDbm);
+  bool trampSetPowerChecked(uint16_t pwrmW);
+
   bool sa_updateSettings(); 
   bool sa_ignoreCrc() const { return SMARTAUDIO_IGNORE_CRC; }  
   bool sa_parseResponseBuffer(const uint8_t* buffer);
   // command functions
-  //bool sa_setPitMode(int enabled);
+  bool sa_setPitMode(bool enabled);
+  bool sa_sendU8Command(uint8_t cmd, uint8_t value);
   bool sa_getSettings();
-  bool sa_setChannel(uint8_t channel);
   bool sa_setFrequency(uint16_t freq);
-  bool sa_setPower(int pwrLevel);
+  bool sa_setPower(uint8_t level);
   bool trampSendPacket(uint8_t* packet, bool respRequired);//trampFrame_t* packet);
   bool trampPush(const uint8_t* packet);//const trampFrame_t* object);
   bool trampSendCmd(uint8_t cmd);
@@ -132,7 +132,7 @@ private:
   bool trampSetFrequency(uint16_t freq);
   bool trampSetPower(uint16_t milliWatts);
   bool trampInit();
-  //bool trampSetPitMode(bool enabled);
+  bool trampSetPitMode(bool enabled);
   bool trampUpdate();
   long trampOfferNewSpeed(long currentSpeed);//tries to offer other baud rate to work with vtx
   bool trampGetStatus();  

@@ -1,9 +1,12 @@
 #include <Arduino.h>
-#include <VTXControl.h>
-#include <SoftwareSerialWithHalfDuplex.h>
+#include <../VTXControl.h>
+#include <../SoftwareSerialWithHalfDuplex.h>
 
 VTXControl* vtx;
 bool vtx_updated = false;
+
+void PrintSettings();
+void PrintErrors();
 
 void setup()
 {
@@ -30,13 +33,13 @@ void loop()
     {
       vtx_updated = true;//succesfully updated
       PrintSettings();
-      Serial.println(F("--Set Channel-------------------------------"));
-      if (vtx->setChannel(13))
+      Serial.println(F("--Set Frequency-------------------------------"));
+      if (vtx->setFrequency(5865))
       {
-        Serial.println(F("Channel succesfully set"));
+        Serial.println(F("Frequency succesfully set"));
       }
       Serial.println(F("--Set Power-------------------------------"));
-      if (vtx->setPower(0))
+      if (vtx->setPowerMw(25))
       {
         Serial.println(F("Power succesfully set"));
       }
@@ -56,8 +59,8 @@ void loop()
 }
 void PrintSettings()
 {
-  Serial.println("Current Power Level:" + (String)vtx->getPowerLevel());
-  Serial.println("Current Channel:" + (String)vtx->getChannelIndex());
+  Serial.println("Current Power, mW:" + (String)vtx->getPowerMw() + ", dBm:" + (String)vtx->getPowerDbm() + ", SA level:" + (String)vtx->getPowerLevel());
+  Serial.println("Current Frequency:" + (String)vtx->getFrequency());
   Serial.println("Current PitMode:" + (String)vtx->getPitMode());
 }
 void PrintErrors()
