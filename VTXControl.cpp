@@ -718,6 +718,22 @@ bool VTXControl::setFrequency(uint16_t freq)
   return false;
 }
 
+bool VTXControl::sendFrequency(uint16_t freq)
+{
+  clearErrors();
+  switch (vtx_mode)
+  {
+  case VTXMode::SmartAudio:
+    return sa_setFrequency(freq);
+  case VTXMode::Tramp:
+    // tramp protocol needs to be initialized (this step waits for response)
+    if (!initialized)
+      trampInit();
+    return initialized && trampSetFrequency(freq);
+  }
+  return false;
+}
+
 bool VTXControl::updateParameters()
 {
   // port->stopListening();
@@ -860,7 +876,7 @@ bool VTXControl::trampSendCmd(uint8_t cmd, uint16_t param)
   buf[15] = TRAMP_SYNC_STOP;
   // we need a reponse for certain commands only
   // so calling UpdateParameters required after send command
-  bool respRequired = cmd == TRAMP_COMMAND_GET_CONFIG || cmd == TRAMP_COMMAND_CMD_RF || TRAMP_COMMAND_CMD_SENSOR;
+  bool respRequired = cmd == TRAMP_COMMAND_GET_CONFIG || cmd == TRAMP_COMMAND_CMD_RF || cmd == TRAMP_COMMAND_CMD_SENSOR;
   return trampSendPacket(buf, respRequired);
 }
 bool VTXControl::trampInit()

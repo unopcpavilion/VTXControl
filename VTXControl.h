@@ -63,6 +63,7 @@ public:
   void waitForInMs(unsigned int ms);
   bool setPitMode(bool enabled);//SmartAudio: v1 not supported, v2 can only leave pitmode, v2.1 full support
   bool setFrequency(uint16_t freq);//set frequency by freq value in MHz
+  bool sendFrequency(uint16_t freq);//fire and forget: sends set frequency command without waiting for confirmation from VTX
   bool setPowerMw(uint16_t pwrmW);//sets power in mW (SmartAudio: converted to the nearest level supported by protocol version)
   bool setPowerDbm(uint8_t pwrDbm);//sets power in dBm (Tramp: converted to mW)
   bool setPowerLevel(uint8_t level);//SmartAudio only: sets raw power level (v1/v2: level index as VTX knows it, v2.1: index in dBm list reported by VTX)
