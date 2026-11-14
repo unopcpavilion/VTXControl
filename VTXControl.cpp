@@ -47,7 +47,7 @@ void VTXControl::clearErrors()
 long VTXControl::getSpeed()
 {
   // DEBUG("VTXControl: getSpeed:" + (String)port->getSpeed());
-  port->getSpeed();
+  return port->getSpeed();
 }
 VTXErrors VTXControl::getErrors()
 {
@@ -1018,12 +1018,14 @@ bool VTXControl::trampReadResponse()
         cur_freq = freq;
         setCurrentMw(frame->payload.settings.power);
         pitMode = (bool)frame->payload.settings.pitModeEnabled;
+#if VTXCDEBUG // Serial can be a data line to another device, never print on it by default
         Serial.println("trampReadResponse: Full status received:");
         Serial.println("  command     : " + String((char)frame->header.command));
         Serial.println("  frequency   : " + (String)frame->payload.settings.frequency);
         Serial.println("  power (mW)  : " + (String)frame->payload.settings.power);
         Serial.println("  raceMode    : " + (String)frame->payload.settings.raceModeEnabled);
         Serial.println("  pitMode     : " + (String)frame->payload.settings.pitModeEnabled);
+#endif
       }
       break;
     }
